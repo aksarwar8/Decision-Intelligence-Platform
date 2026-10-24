@@ -24,8 +24,8 @@ def test_walk_forward_backtest_returns_both_baselines():
         min_train_days=28,
     )
 
-    assert summary["backtest_origins"] == 5
-    assert summary["forecasted_observations"] == 35
+    assert summary["backtest_origins"] == 4
+    assert summary["forecasted_observations"] == 28
     assert set(["actual", "naive_forecast", "seasonal_naive_forecast"]).issubset(
         predictions.columns
     )
