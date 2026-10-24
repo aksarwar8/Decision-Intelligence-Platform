@@ -1,9 +1,4 @@
-"""Run a rolling-origin baseline comparison on prepared Online Retail data.
-
-Examples:
-    python scripts/backtest_online_retail.py
-    python scripts/backtest_online_retail.py --product-id 85123A --market "United Kingdom"
-"""
+"""Run baseline and ML demand-forecast evaluations on prepared data."""
 from __future__ import annotations
 
 import argparse
@@ -16,36 +11,19 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 import pandas as pd  # noqa: E402
 from app.ml.baselines import walk_forward_baseline_backtest  # noqa: E402
+from app.ml.forecasting import walk_forward_ml_backtest  # noqa: E402
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--input",
-        type=Path,
-        default=Path("data/processed/online_retail/daily_demand.csv"),
-        help="Prepared daily demand CSV",
-    )
+    parser.add_argument("--input", type=Path, default=Path("data/processed/online_retail/daily_demand.csv"))
     parser.add_argument("--product-id", help="StockCode to evaluate")
     parser.add_argument("--market", help="Country/market to evaluate")
-    parser.add_argument("--horizon", type=int, default=7, help="Forecast horizon in days")
-    parser.add_argument(
-        "--min-train-days",
-        type=int,
-        default=28,
-        help="Minimum history before the first forecast origin",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("data/processed/online_retail/backtest"),
-        help="Output directory for metrics and forecast rows",
-    )
-    parser.add_argument(
-        "--keep-missing-as-error",
-        action="store_true",
-        help="Fail when dates are missing rather than assuming zero sales",
-    )
+    parser.add_argument("--horizon", type=int, default=7)
+    parser.add_argument("--min-train-days", type=int, default=56)
+    parser.add_argument("--step", type=int, default=7, help="Days between forecast origins")
+    parser.add_argument("--output-dir", type=Path, default=Path("data/processed/online_retail/backtest"))
+    parser.add_argument("--keep-missing-as-error", action="store_true")
     args = parser.parse_args()
 
     if not args.input.exists():
@@ -55,49 +33,45 @@ def main() -> int:
         )
 
     data = pd.read_csv(args.input, parse_dates=["date"])
-    if args.product_id is None or args.market is None:
-        counts = (
-            data.groupby(["product_id", "market"], dropna=False)
-            .size()
-            .sort_values(ascending=False)
-        )
-        if counts.empty:
-            parser.error("Prepared daily demand file contains no rows")
-        suggested_product, suggested_market = counts.index[0]
-        product_id = str(args.product_id or suggested_product)
-        market = str(args.market or suggested_market)
-        print(
-            "Selected the product/market with the most observed daily rows: "
-            f"product_id={product_id!r}, market={market!r}. "
-            "Pass --product-id and --market to choose another series."
-        )
-    else:
-        product_id, market = str(args.product_id), str(args.market)
+    counts = data.groupby(["product_id", "market"], dropna=False).size().sort_values(ascending=False)
+    if counts.empty:
+        parser.error("Prepared daily demand file contains no rows")
+    product_id = str(args.product_id or counts.index[0][0])
+    market = str(args.market or counts.index[0][1])
+    print(f"Evaluating product_id={product_id!r}, market={market!r}")
 
+    common = {
+        "product_id": product_id,
+        "market": market,
+        "horizon": args.horizon,
+        "step": args.step,
+        "fill_missing_days_with_zero": not args.keep_missing_as_error,
+    }
     try:
-        predictions, summary = walk_forward_baseline_backtest(
-            data,
-            product_id=product_id,
-            market=market,
-            horizon=args.horizon,
-            min_train_days=args.min_train_days,
-            fill_missing_days_with_zero=not args.keep_missing_as_error,
+        # Use the same minimum history and step so the forecast windows align.
+        baseline_predictions, baseline_summary = walk_forward_baseline_backtest(
+            data, **common, min_train_days=args.min_train_days
+        )
+        ml_predictions, ml_summary = walk_forward_ml_backtest(
+            data, **common, min_train_days=args.min_train_days
         )
     except ValueError as exc:
         parser.error(str(exc))
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    predictions_path = args.output_dir / "forecast_backtest.csv"
-    summary_path = args.output_dir / "forecast_metrics.json"
-    predictions.to_csv(predictions_path, index=False)
-    summary_path.write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
+    baseline_predictions.to_csv(args.output_dir / "forecast_backtest.csv", index=False)
+    (args.output_dir / "forecast_metrics.json").write_text(
+        json.dumps(baseline_summary, indent=2) + "\n", encoding="utf-8"
     )
-
-    print(json.dumps(summary, indent=2))
-    print(f"Forecast rows: {predictions_path}")
-    print(f"Metrics: {summary_path}")
+    ml_predictions.to_csv(args.output_dir / "ml_forecast_backtest.csv", index=False)
+    (args.output_dir / "ml_forecast_metrics.json").write_text(
+        json.dumps(ml_summary, indent=2) + "\n", encoding="utf-8"
+    )
+    print("Baseline metrics:")
+    print(json.dumps(baseline_summary, indent=2))
+    print("ML metrics:")
+    print(json.dumps(ml_summary, indent=2))
+    print(f"Outputs written to: {args.output_dir}")
     return 0
 
 
