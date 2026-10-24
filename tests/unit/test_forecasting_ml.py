@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from app.ml.baselines import ForecastingDataError
-from app.ml.forecasting import walk_forward_ml_backtest
+from app.ml.forecasting import _features_for_next_date, walk_forward_ml_backtest
 
 
 def frame(values):
@@ -13,6 +13,32 @@ def frame(values):
         "market": "UK",
         "demand": values,
     })
+
+
+def test_forecast_features_are_aligned_to_next_date_and_use_past_values_only():
+    dates = pd.date_range("2024-01-01", periods=35, freq="D")
+    history = pd.Series([float(i + 1) for i in range(35)], index=dates)
+    forecast_date = dates[-1] + pd.Timedelta(days=1)
+
+    features = _features_for_next_date(history, forecast_date)
+
+    assert features.index[0] == forecast_date
+    assert features.iloc[0]["day_of_week"] == forecast_date.dayofweek
+    assert features.iloc[0]["day_of_month"] == forecast_date.day
+    assert features.iloc[0]["month"] == forecast_date.month
+    assert features.iloc[0]["is_weekend"] == int(forecast_date.dayofweek >= 5)
+    assert features.iloc[0]["lag_1"] == history.iloc[-1]
+    assert features.iloc[0]["lag_7"] == history.iloc[-7]
+    assert features.iloc[0]["rolling_mean_7"] == pytest.approx(history.iloc[-7:].mean())
+    assert features.notna().all().all()
+
+
+def test_forecast_features_reject_a_date_already_in_history():
+    dates = pd.date_range("2024-01-01", periods=35, freq="D")
+    history = pd.Series([float(i + 1) for i in range(35)], index=dates)
+
+    with pytest.raises(ForecastingDataError, match="must not already exist"):
+        _features_for_next_date(history, dates[-1])
 
 
 def test_ml_backtest_uses_rolling_origins_and_nonnegative_forecasts():
