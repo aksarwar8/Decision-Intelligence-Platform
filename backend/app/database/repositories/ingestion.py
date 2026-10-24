@@ -66,3 +66,48 @@ def get_ingestion_run(
     """Retrieve one ingestion run by ID."""
     return db.get(IngestionRun, run_id)
 
+
+
+def finish_ingestion_run(
+    db: Session,
+    run_id: int,
+    *,
+    status: str,
+    records_received: int,
+    records_inserted: int,
+    records_rejected: int,
+) -> IngestionRun | None:
+    """Finish a pending ingestion run and save its final counts."""
+    if status not in {"completed", "failed"}:
+        raise ValueError("status must be 'completed' or 'failed'")
+
+    run = db.get(IngestionRun, run_id)
+
+    if run is None:
+        return None
+
+    if run.status != "pending":
+        raise ValueError("Only pending ingestion runs can be finished")
+
+    if min(records_received, records_inserted, records_rejected) < 0:
+        raise ValueError("Record counts cannot be negative")
+
+    if records_inserted + records_rejected > records_received:
+        raise ValueError(
+            "Inserted and rejected counts cannot exceed received records"
+        )
+
+    run.status = status
+    run.records_received = records_received
+    run.records_inserted = records_inserted
+    run.records_rejected = records_rejected
+    run.completed_at = datetime.now(timezone.utc)
+
+    try:
+        db.commit()
+        db.refresh(run)
+        return run
+    except Exception:
+        db.rollback()
+        raise
+

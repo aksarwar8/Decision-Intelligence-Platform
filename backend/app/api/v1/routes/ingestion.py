@@ -4,8 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database.dependencies import get_db
-from app.schemas.ingestion import IngestionRunCreate, IngestionRunResponse
+from app.schemas.ingestion import (
+    IngestionRunCreate,
+    IngestionRunFinish,
+    IngestionRunResponse,
+)
 from app.services.ingestion_service import (
+    complete_ingestion_run,
     get_ingestion_run_by_id,
     get_ingestion_runs,
     start_ingestion_run,
@@ -69,3 +74,36 @@ def get_ingestion_run_endpoint(
 
     return run
 
+
+@router.patch(
+    "/runs/{run_id}/finish",
+    response_model=IngestionRunResponse,
+)
+def finish_ingestion_run_endpoint(
+    run_id: int,
+    request: IngestionRunFinish,
+    db: Session = Depends(get_db),
+) -> IngestionRunResponse:
+    """Finish a pending ingestion run."""
+    try:
+        run = complete_ingestion_run(
+            db,
+            run_id,
+            status=request.status,
+            records_received=request.records_received,
+            records_inserted=request.records_inserted,
+            records_rejected=request.records_rejected,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ingestion run not found",
+        )
+
+    return run
