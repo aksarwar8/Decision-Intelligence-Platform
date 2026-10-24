@@ -40,7 +40,7 @@ Output defaults to `data/processed/m5/daily_demand.csv`. Filters can be omitted,
 To evaluate the prepared series with the existing backtest CLI:
 
 ```powershell
-python scripts/backtest_online_retail.py --input "data/processed/m5/daily_demand.csv" --product-id "HOBBIES_1_001" --market "CA_1" --output-dir "data/processed/m5/backtest"
+python scripts/backtest_demand.py --input "data/processed/m5/daily_demand.csv" --product-id "HOBBIES_1_001" --market "CA_1" --output-dir "data/processed/m5/backtest"
 ```
 
 The backtest script name is still Online Retail-specific and will be generalized in a follow-up. A successful unit-test run does not substitute for running and reviewing a full M5 backtest locally.
