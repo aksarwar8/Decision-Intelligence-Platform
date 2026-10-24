@@ -33,7 +33,7 @@ substantial memory. Use IDs that exist in your downloaded files.
 The output is compatible with the current evaluators. For example:
 
 ```powershell
-python scripts/backtest_online_retail.py --input "data/processed/m5/daily_demand.csv" --product-id "HOBBIES_1_001" --market "CA_1" --output-dir "data/processed/m5/backtest"
+python scripts/backtest_demand.py --input "data/processed/m5/daily_demand.csv" --product-id "HOBBIES_1_001" --market "CA_1" --output-dir "data/processed/m5/backtest"
 ```
 
 The backtest script still has an Online Retail-specific name; a generic
