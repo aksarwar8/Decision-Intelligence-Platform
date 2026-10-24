@@ -1,32 +1,20 @@
 # Decision Intelligence Platform
 
-A portfolio project exploring a reproducible decision-support workflow: ingest business data, validate it, forecast demand, evaluate forecasts against simple baselines, and expose results through a future API and dashboard.
+DecisionOS is a portfolio project for retail demand forecasting and operational decision support. The V1 canonical dataset is **M5 Forecasting**.
 
-> **Current scope:** the Online Retail ingestion and forecasting work is an experimental data/ML workflow. It is not yet integrated into the production API, dashboard, or a complete decision recommendation engine. The existing project configuration also references an M5 replay provider; choose and document the canonical V1 data source before integration.
+> **Current status:** the M5 CSV loader and preparation CLI are implemented with unit tests. The data workflow is not yet integrated with the production API, PostgreSQL ingestion, inventory recommendations, or dashboard. No full-dataset backtest has been claimed.
 
 ## Current capabilities
 
-- Load the UCI Online Retail Excel workbook and validate the required fields.
-- Exclude cancellations/returns and invalid sales rows for the current demand target.
-- Aggregate sales into daily demand by product and country/market.
-- Write a data-quality report and a processed daily-demand CSV.
-- Evaluate naive and weekly seasonal-naive baselines using rolling-origin backtesting.
-- Evaluate a scikit-learn HistGradientBoostingRegressor with lag, rolling-statistic, and calendar features.
-- Report MAE, RMSE, and WAPE for the evaluated series.
-
-## Repository areas
-
-- `backend/app/data/online_retail.py` — workbook validation and daily demand aggregation.
-- `backend/app/ml/baselines.py` — baseline forecasts and evaluation metrics.
-- `backend/app/ml/forecasting.py` — feature-based ML forecasting and recursive walk-forward evaluation.
-- `scripts/prepare_online_retail.py` — data preparation CLI.
-- `scripts/backtest_online_retail.py` — baseline-versus-ML evaluation CLI.
-- `tests/unit/` — unit tests for ingestion and forecasting.
-- `docs/` — data assumptions and modeling documentation.
+- Load M5 item/store daily sales and map M5 day IDs to calendar dates.
+- Filter an item/store subset before reshaping the wide M5 table.
+- Produce the common demand schema: date, product_id, market, demand.
+- Evaluate naive and weekly seasonal-naive baselines and a feature-based ML benchmark using the existing evaluation modules.
+- Run unit tests locally and through GitHub Actions.
 
 ## Setup (PowerShell)
 
-Run these commands from the repository root, with your virtual environment activated:
+Run from the repository root with your virtual environment activated:
 
 ```powershell
 pip install -r requirements.txt
@@ -34,48 +22,56 @@ $env:PYTHONPATH = "backend"
 pytest tests/unit -v
 ```
 
-Place the workbook at `data/Online Retail.xlsx`. The raw dataset is intentionally not expected to be committed to Git.
+## M5 data preparation
 
-Prepare the data:
+Download the official M5 dataset files and place these two CSVs in `data/raw/m5/`:
 
-```powershell
-python scripts/prepare_online_retail.py --input "data/Online Retail.xlsx"
-```
+- `sales_train_validation.csv`
+- `calendar.csv`
 
-Run the backtest:
-
-```powershell
-python scripts/backtest_online_retail.py
-```
-
-By default, the script selects the product-market combination with the most observed daily rows, uses a 7-day forecast horizon, 56 minimum training days, and 7 days between forecast origins. You can specify a series explicitly:
+Raw data should not be committed to Git. Prepare a single item/store series (use IDs that exist in your files):
 
 ```powershell
-python scripts/backtest_online_retail.py --product-id "85123A" --market "United Kingdom"
+python scripts/prepare_m5.py --item-id "HOBBIES_1_001" --store-id "CA_1"
 ```
 
-Results are written under `data/processed/online_retail/backtest/`, including baseline and ML prediction CSVs and metric JSON files.
+Output defaults to `data/processed/m5/daily_demand.csv`. Filters can be omitted, but reshaping the entire M5 table may consume substantial memory.
 
-## How to interpret results
+To evaluate the prepared series with the existing backtest CLI:
 
-- **MAE** is the mean absolute error in demand units.
-- **RMSE** penalizes larger errors more strongly.
-- **WAPE** expresses total absolute error relative to total actual demand; it can be unstable or uninformative when total actual demand is very small.
-- Compare models only when they use the same forecast origins, dates, horizon, target definition, and missing-date policy.
-- A backtest result on one product-market series is not evidence that the model generalizes across all products or markets.
+```powershell
+python scripts/backtest_online_retail.py --input "data/processed/m5/daily_demand.csv" --product-id "HOBBIES_1_001" --market "CA_1" --output-dir "data/processed/m5/backtest"
+```
 
-### Data and modeling caveats
+The backtest script name is still Online Retail-specific and will be generalized in a follow-up. A successful unit-test run does not substitute for running and reviewing a full M5 backtest locally.
 
-The workflow fills missing calendar dates with zero by default. In transaction data, a missing date can mean no recorded sales, but it can also mean incomplete reporting or a product not being offered. Validate this assumption for each use case. The current backtest evaluates one selected series by default; evaluate multiple representative series and report aggregate results before making broad performance claims. The ML forecasts are recursive, so later days in a forecast horizon use earlier model predictions as lag inputs.
+## Evaluation interpretation
+
+- **MAE:** average absolute error in demand units.
+- **RMSE:** penalizes larger errors more strongly.
+- **WAPE:** total absolute error divided by total actual demand; interpret cautiously when total actual demand is very small.
+- Compare models on identical forecast origins, dates, horizon, target definition, and missing-date policy.
+- One item/store series is not evidence of generalization across all products and stores.
+
+## Known limitations
+
+- The first M5 loader reads sales history and calendar dates; it does not yet use sell prices, event features, or the M5 evaluation rows.
+- M5 contains sales, not current on-hand inventory, purchase orders, supplier lead times, or replenishment costs. Real replenishment recommendations need those inputs.
+- Missing calendar dates are handled by the forecasting layer according to its configured policy; zero sales and unavailable data must not be confused.
+- The M5 unit tests use small synthetic fixtures. The full raw dataset is not included in CI.
+- The ML workflow is not yet integrated into the API or persisted in PostgreSQL.
+
+See [M5 data workflow](docs/M5_DATA.md), [forecasting baselines](docs/FORECASTING_BASELINES.md), and [ML forecasting](docs/ML_FORECASTING.md).
 
 ## Configuration and secrets
 
-Copy `.env.example` to a local `.env` and set your own local values. Never commit a real database password, API key, token, or other secret. If a real credential has ever been committed, rotate it; removing it from the current file does not remove it from Git history.
+Copy `.env.example` to a local `.env` and set your own values. Never commit real passwords, API keys, tokens, or other secrets. If a real credential has been committed, rotate it; removing it from the current file does not remove it from Git history.
 
-## Next steps
+## Next milestones
 
-1. Validate the data-source decision (Online Retail versus the existing M5 replay configuration).
-2. Run the unit suite and full backtest locally and record reproducible results.
-3. Evaluate more product-market series and compare aggregate performance with the baselines.
-4. Integrate a validated forecasting interface into the API, then add monitoring and a dashboard.
-5. Add end-to-end tests and CI checks before treating results as release-ready.
+1. Generalize the backtest CLI so its name and defaults are dataset-independent.
+2. Run the M5 preparation and backtest locally on the downloaded dataset and record reproducible metrics.
+3. Add sell-price/event features only with a time-aware leakage policy.
+4. Implement the M5 replay-provider and database-ingestion path.
+5. Add inventory data and explicitly sourced assumptions before implementing replenishment recommendations.
+6. Integrate the validated forecasting interface into the API, then add end-to-end tests and dashboard support.
