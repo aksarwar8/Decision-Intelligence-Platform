@@ -28,6 +28,22 @@ def _make_features(series: pd.Series) -> pd.DataFrame:
     return frame
 
 
+def _features_for_next_date(history: pd.Series, forecast_date: pd.Timestamp) -> pd.DataFrame:
+    """Build one feature row indexed by the date being forecast.
+
+    A NaN target placeholder lets lag and rolling features use only history while
+    calendar features correctly describe forecast_date.
+    """
+    forecast_date = pd.Timestamp(forecast_date).normalize()
+    if forecast_date in history.index:
+        raise ForecastingDataError("forecast_date must not already exist in history")
+    if not history.index.is_monotonic_increasing or forecast_date <= history.index[-1]:
+        raise ForecastingDataError("forecast_date must be later than the latest history date")
+    placeholder = pd.Series([np.nan], index=pd.DatetimeIndex([forecast_date]), dtype=float)
+    extended = pd.concat([history.astype(float), placeholder])
+    return _make_features(extended).iloc[[-1]]
+
+
 def walk_forward_ml_backtest(
     daily_demand: pd.DataFrame,
     *,
@@ -112,7 +128,7 @@ def walk_forward_ml_backtest(
         actual_values = series.iloc[origin : origin + horizon].to_numpy(dtype=float)
         for offset in range(horizon):
             next_date = calendar[origin + offset]
-            features = _make_features(history).iloc[[-1]]
+            features = _features_for_next_date(history, next_date)
             prediction = max(0.0, float(model.predict(features)[0]))
             rows.append({
                 "product_id": str(product_id),
@@ -142,7 +158,8 @@ def walk_forward_ml_backtest(
         ),
         "note": (
             "Recursive multi-step forecast. Compare with baselines only on identical "
-            "forecast origins and target dates."
+            "forecast origins and target dates. Missing calendar dates are zero-filled "
+            "by default and this assumption should be validated for the selected series."
         ),
     }
     return predictions, summary
