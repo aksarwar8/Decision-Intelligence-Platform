@@ -73,7 +73,7 @@ Send a `POST` request to `/api/v1/ingestion/m5/replay` with JSON body `{"item_id
 - The M5 unit tests use small synthetic fixtures. The full raw dataset is not included in CI.
 - The M5 replay-to-PostgreSQL path is implemented but still needs a local run against your PostgreSQL database and real M5 files; GitHub CI uses synthetic fixtures, not the full dataset.
 
-See [M5 data workflow](docs/M5_DATA.md), [forecasting baselines](docs/FORECASTING_BASELINES.md), and [ML forecasting](docs/ML_FORECASTING.md).
+Start with the simplified [system architecture](docs/SYSTEM_ARCHITECTURE.md) and [interview guide](docs/INTERVIEW_GUIDE.md). For details, see [M5 data workflow](docs/M5_DATA.md), [forecasting baselines](docs/FORECASTING_BASELINES.md), and [ML forecasting](docs/ML_FORECASTING.md).
 
 ## Configuration and secrets
 
