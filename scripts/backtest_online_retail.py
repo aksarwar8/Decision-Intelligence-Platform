@@ -50,8 +50,8 @@ def main() -> int:
 
     if not args.input.exists():
         parser.error(
-            f"Prepared data not found: {args.input}. First run "
-            "'python scripts/prepare_online_retail.py --input "data/Online Retail.xlsx"'."
+            f"Prepared data not found: {args.input}. "
+            'First run: python scripts/prepare_online_retail.py --input "data/Online Retail.xlsx"'
         )
 
     data = pd.read_csv(args.input, parse_dates=["date"])
