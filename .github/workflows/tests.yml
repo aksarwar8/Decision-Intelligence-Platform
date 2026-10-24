@@ -29,4 +29,5 @@ jobs:
       - name: Run unit tests
         env:
           PYTHONPATH: backend
+          DATABASE_URL: sqlite:///./ci-test.db
         run: python -m pytest tests/unit -v
