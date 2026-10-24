@@ -43,7 +43,7 @@ To evaluate the prepared series with the existing backtest CLI:
 python scripts/backtest_demand.py --input "data/processed/m5/daily_demand.csv" --product-id "HOBBIES_1_001" --market "CA_1" --output-dir "data/processed/m5/backtest"
 ```
 
-The backtest script name is still Online Retail-specific and will be generalized in a follow-up. A successful unit-test run does not substitute for running and reviewing a full M5 backtest locally.
+The dataset-independent `scripts/backtest_demand.py` CLI evaluates any prepared CSV using the common demand schema. A successful unit-test run does not substitute for running and reviewing a full M5 backtest locally.
 
 ## Evaluation interpretation
 
