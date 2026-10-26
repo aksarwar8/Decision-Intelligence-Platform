@@ -2,14 +2,15 @@
 
 DecisionOS is a portfolio project for retail demand forecasting and operational decision support. The V1 canonical dataset is **M5 Forecasting**.
 
-> **Current status:** an M5 replay endpoint and daily-demand persistence path have been added, with a database migration and unit tests. Validate locally against PostgreSQL and your raw M5 files before treating ingestion as end-to-end verified. Inventory recommendations and dashboard remain future work. No full-dataset backtest has been claimed.
+> **Current status:** M5 data preparation, forecasting/backtesting modules, an ingestion API/database foundation, and a first Streamlit dashboard are present. The dashboard expects a prepared daily-demand CSV. Validate the complete flow locally against your M5 files and PostgreSQL before describing it as end-to-end verified. Inventory recommendations remain future work.
 
 ## Current capabilities
 
 - Load M5 item/store daily sales and map M5 day IDs to calendar dates.
 - Filter an item/store subset before reshaping the wide M5 table.
 - Produce the common demand schema: date, product_id, market, demand.
-- Evaluate naive and weekly seasonal-naive baselines and a feature-based ML benchmark using the existing evaluation modules.
+- Evaluate last-value and weekly seasonal-naive baselines plus a feature-based ML benchmark.
+- Explore historical demand and compare forecast metrics in a Streamlit dashboard.
 - Run unit tests locally and through GitHub Actions.
 
 ## Setup (PowerShell)
@@ -24,7 +25,7 @@ pytest tests/unit -v
 
 ## M5 data preparation
 
-Download the official M5 dataset files and place these two CSVs in `data/raw/m5/`:
+Download the M5 dataset files and place these two CSVs in `data/raw/m5/`:
 
 - `sales_train_validation.csv`
 - `calendar.csv`
@@ -37,7 +38,19 @@ python scripts/prepare_m5.py --item-id "HOBBIES_1_001" --store-id "CA_1"
 
 Output defaults to `data/processed/m5/daily_demand.csv`. Filters can be omitted, but reshaping the entire M5 table may consume substantial memory.
 
-To evaluate the prepared series with the existing backtest CLI:
+## Run the Streamlit dashboard
+
+After preparing the CSV, run:
+
+```powershell
+streamlit run dashboard/streamlit_app.py
+```
+
+The dashboard lets you select a product/store, inspect historical demand, and run rolling-origin comparisons for a last-value baseline, weekly seasonal-naive baseline, and HistGradientBoosting model. The first evaluation can take some time because the ML model is refit at each backtest origin. You can change the prepared CSV path in the sidebar.
+
+The dashboard reports MAE, RMSE and WAPE and allows prediction CSVs to be downloaded. Compare models on the same forecast horizon and origins. The result describes only the selected product/store series; it does not guarantee future performance.
+
+## Run the backtest CLI
 
 ```powershell
 python scripts/backtest_demand.py --input "data/processed/m5/daily_demand.csv" --product-id "HOBBIES_1_001" --market "CA_1" --output-dir "data/processed/m5/backtest"
@@ -55,7 +68,7 @@ alembic upgrade head
 uvicorn app.main:app --reload --app-dir backend
 ```
 
-Send a `POST` request to `/api/v1/ingestion/m5/replay` with JSON body `{"item_id":"HOBBIES_1_001","store_id":"CA_1"}`. The response is the ingestion-run record. The endpoint intentionally requires one item/store pair to limit memory use. Re-running the same series updates existing date/product/market keys instead of duplicating them. Raw M5 files remain local and must not be committed.
+Send a `POST` request to `/api/v1/ingestion/m5/replay` with JSON body `{"item_id":"HOBBIES_1_001","store_id":"CA_1"}`. The endpoint intentionally requires one item/store pair to limit memory use. Re-running the same series updates existing date/product/market keys instead of duplicating them. Raw M5 files remain local and must not be committed.
 
 ## Evaluation interpretation
 
@@ -67,13 +80,15 @@ Send a `POST` request to `/api/v1/ingestion/m5/replay` with JSON body `{"item_id
 
 ## Known limitations
 
-- The first M5 loader reads sales history and calendar dates; it does not yet use sell prices, event features, or the M5 evaluation rows.
+- The M5 loader reads sales history and calendar dates; it does not yet use sell prices, event features, or the M5 evaluation rows.
 - M5 contains sales, not current on-hand inventory, purchase orders, supplier lead times, or replenishment costs. Real replenishment recommendations need those inputs.
 - Missing calendar dates are handled by the forecasting layer according to its configured policy; zero sales and unavailable data must not be confused.
 - The M5 unit tests use small synthetic fixtures. The full raw dataset is not included in CI.
-- The M5 replay-to-PostgreSQL path is implemented but still needs a local run against your PostgreSQL database and real M5 files; GitHub CI uses synthetic fixtures, not the full dataset.
+- The M5 replay-to-PostgreSQL path still needs a local run against your PostgreSQL database and real M5 files; GitHub CI uses synthetic fixtures, not the full dataset.
+- The dashboard reads the prepared CSV directly; it is not yet connected to the PostgreSQL/API layer.
+- Streamlit forecasting metrics are calculated on demand for one selected product/store, not precomputed for the entire dataset.
 
-Start with the simplified [system architecture](docs/SYSTEM_ARCHITECTURE.md) and [interview guide](docs/INTERVIEW_GUIDE.md). For details, see [M5 data workflow](docs/M5_DATA.md), [forecasting baselines](docs/FORECASTING_BASELINES.md), and [ML forecasting](docs/ML_FORECASTING.md).
+Start with the [system architecture](docs/SYSTEM_ARCHITECTURE.md) and [interview guide](docs/INTERVIEW_GUIDE.md). For details, see [M5 data workflow](docs/M5_DATA.md), [forecasting baselines](docs/FORECASTING_BASELINES.md), and [ML forecasting](docs/ML_FORECASTING.md).
 
 ## Configuration and secrets
 
@@ -81,9 +96,8 @@ Copy `.env.example` to a local `.env` and set your own values. Never commit real
 
 ## Next milestones
 
-1. Generalize the backtest CLI so its name and defaults are dataset-independent.
-2. Run the M5 preparation and backtest locally on the downloaded dataset and record reproducible metrics.
+1. Run the M5 preparation and dashboard locally and record reproducible metrics.
+2. Verify M5 replay into PostgreSQL and add endpoint-level integration tests.
 3. Add sell-price/event features only with a time-aware leakage policy.
-4. Run and verify the M5 replay endpoint against local PostgreSQL and real M5 files; add endpoint-level integration tests.
-5. Add inventory data and explicitly sourced assumptions before implementing replenishment recommendations.
-6. Integrate the validated forecasting interface into the API, then add end-to-end tests and dashboard support.
+4. Add inventory data and explicitly sourced assumptions before implementing replenishment recommendations.
+5. Connect dashboard reads to the API/database and add end-to-end tests.
