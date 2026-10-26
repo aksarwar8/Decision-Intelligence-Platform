@@ -66,7 +66,7 @@ The diagram shows the current components and planned connections. The dashboard 
 4. The demand repository inserts or updates rows keyed by date, product and market.
 5. The route marks the ingestion run completed or failed and returns its status.
 
-The ingestion route was simplified so the current request flow is visible in one place. The older `providers/m5_replay.py` and `services/ingestion_service.py` modules remain in the repository for compatibility with existing code/tests; the M5 replay endpoint no longer needs to route through them. We should remove legacy modules only after confirming no active imports or tests depend on them.
+The API route coordinates this short workflow directly. We removed the unused `providers/m5_replay.py` and `services/ingestion_service.py` wrappers because the current endpoint did not call them. Data loading remains in `app.data`, and database operations remain in repositories.
 
 ## 5. Database tables
 
