@@ -324,3 +324,48 @@ def test_finish_ingestion_run_endpoint_rejects_second_finish(client):
     assert "Only pending ingestion runs can be finished" in (
         second_response.json()["detail"]
     )
+
+
+def test_m5_replay_saves_selected_series(client, tmp_path, monkeypatch):
+    import pandas as pd
+
+    from app.core.config import settings
+
+    pd.DataFrame(
+        [{"item_id": "ITEM_1", "store_id": "STORE_1", "d_1": 3, "d_2": 0}]
+    ).to_csv(tmp_path / "sales_train_validation.csv", index=False)
+    pd.DataFrame(
+        {"d": ["d_1", "d_2"], "date": ["2016-01-01", "2016-01-02"]}
+    ).to_csv(tmp_path / "calendar.csv", index=False)
+    monkeypatch.setattr(settings, "M5_DATA_DIRECTORY", str(tmp_path))
+
+    response = client.post(
+        "/api/v1/ingestion/m5/replay",
+        json={"item_id": "ITEM_1", "store_id": "STORE_1"},
+    )
+
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["provider"] == "m5"
+    assert result["status"] == "completed"
+    assert result["records_received"] == 2
+    assert result["records_inserted"] == 2
+
+
+def test_m5_replay_marks_run_failed_when_files_are_missing(
+    client, tmp_path, monkeypatch
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "M5_DATA_DIRECTORY", str(tmp_path))
+
+    response = client.post(
+        "/api/v1/ingestion/m5/replay",
+        json={"item_id": "ITEM_1", "store_id": "STORE_1"},
+    )
+
+    assert response.status_code == 422
+    runs = client.get("/api/v1/ingestion/runs")
+    assert runs.status_code == 200
+    assert len(runs.json()) == 1
+    assert runs.json()[0]["status"] == "failed"
