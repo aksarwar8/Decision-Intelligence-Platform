@@ -1,13 +1,11 @@
 """Ingestion API endpoints.
 
-Keep the request flow visible here:
-HTTP request -> validate request -> load/prepare source data -> save rows ->
-update the ingestion-run record -> return a response.
-
-Small database operations remain in database/repositories. This route does not
-need a separate service and provider layer for the current single-source MVP.
+Each endpoint validates the request and coordinates the small steps needed to
+load data. Data parsing lives in app.data; database operations live in
+app.database.repositories.
 """
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -105,10 +103,11 @@ def replay_m5_endpoint(
     request: M5ReplayRequest,
     db: Session = Depends(get_db),
 ) -> IngestionRunResponse:
-    """Load and persist one M5 item/store series.
+    """Load one M5 item/store series and save its daily demand.
 
-    Only one series is replayed per request to keep memory use bounded.
-    Replaying an existing series updates the same date/product/market keys.
+    A replay is limited to one series so that a request does not load the full
+    M5 dataset into memory. Demand rows and the successful run status are
+    committed together.
     """
     run = create_ingestion_run(
         db,
@@ -116,23 +115,26 @@ def replay_m5_endpoint(
         mode="historical",
         status="pending",
     )
+    data_directory = Path(settings.M5_DATA_DIRECTORY)
 
     try:
-        data_directory = settings.M5_DATA_DIRECTORY
         demand = load_m5_daily_demand(
-            f"{data_directory}/sales_train_validation.csv",
-            f"{data_directory}/calendar.csv",
+            data_directory / "sales_train_validation.csv",
+            data_directory / "calendar.csv",
             item_id=request.item_id,
             store_id=request.store_id,
         )
         received, inserted_or_updated = upsert_daily_demand(
             db,
             demand.to_dict(orient="records"),
+            commit=False,
         )
 
+        # Keep the demand rows and successful run status in one transaction.
         run = get_ingestion_run(db, run.id)
         if run is None:
             raise RuntimeError("Ingestion-run record disappeared during replay")
+
         run.status = "completed"
         run.records_received = received
         run.records_inserted = inserted_or_updated
@@ -144,20 +146,22 @@ def replay_m5_endpoint(
 
     except (FileNotFoundError, ValueError) as exc:
         db.rollback()
-        run = get_ingestion_run(db, run.id)
-        if run is not None:
-            run.status = "failed"
-            run.completed_at = datetime.now(timezone.utc)
-            db.commit()
+        _mark_run_failed(db, run.id)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         db.rollback()
-        run = get_ingestion_run(db, run.id)
-        if run is not None:
-            run.status = "failed"
-            run.completed_at = datetime.now(timezone.utc)
-            db.commit()
+        _mark_run_failed(db, run.id)
         raise HTTPException(
             status_code=500,
             detail="M5 ingestion failed; see server logs",
         ) from exc
+
+
+def _mark_run_failed(db: Session, run_id: int) -> None:
+    """Persist a failed status after rolling back the attempted data write."""
+    run = get_ingestion_run(db, run_id)
+    if run is None:
+        return
+    run.status = "failed"
+    run.completed_at = datetime.now(timezone.utc)
+    db.commit()
