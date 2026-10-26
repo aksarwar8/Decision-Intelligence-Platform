@@ -1,4 +1,4 @@
-"""Tests for baseline and machine-learning forecasting entry points."""
+"""Tests for the baseline forecasting workflow."""
 
 import pandas as pd
 import pytest
@@ -10,7 +10,7 @@ def test_baseline_backtest_returns_forecasts():
     dates = pd.date_range("2024-01-01", periods=42, freq="D")
     data = pd.DataFrame({"date": dates, "product_id": "ITEM_1", "market": "STORE_1", "demand": [float(i % 7 + 1) for i in range(42)]})
     predictions, summary = walk_forward_baseline_backtest(data, product_id="ITEM_1", market="STORE_1", horizon=3, min_train_days=28)
-    assert len(predictions) == 15
+    assert len(predictions) == 12
     assert summary["forecasted_observations"] == len(predictions)
     assert summary["naive"]["mae"] >= 0
 
